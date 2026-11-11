@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Build the Sentence</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:#fff7e0;font-family:Arial,Helvetica,sans-serif;color:#333}
+body{padding:12px;max-width:900px;margin:0 auto}
+h1{font-size:22px;margin:0 0 6px;text-align:center}
+#count{text-align:center;font-size:18px;margin-bottom:8px;color:#a05a00;font-weight:bold}
+.label{font-size:16px;margin:10px 0 4px;font-weight:bold}
+#answer,#bank{min-height:74px;border:3px dashed #e0a030;border-radius:14px;padding:8px;background:#fff}
+#answer{border-color:#3a8fd9}
+.chip{display:inline-block;margin:5px;padding:12px 18px;font-size:26px;background:#ffd966;border:2px solid #d9a400;border-radius:12px;cursor:pointer;-ms-touch-action:none;touch-action:none;-webkit-user-select:none;user-select:none}
+.chip.good{background:#9be39b;border-color:#3ca33c}
+.ghost{position:fixed;z-index:50;opacity:.85;pointer-events:none;margin:0}
+.btn{font-size:20px;padding:12px 22px;margin:6px 4px;border:0;border-radius:12px;background:#3a8fd9;color:#fff;font-weight:bold;cursor:pointer}
+.btn.gray{background:#999}
+.btn.green{background:#2ea44f}
+.btn.red{background:#e05050}
+.btn[disabled]{opacity:.4}
+.row{text-align:center}
+#msg{min-height:28px;text-align:center;font-size:20px;font-weight:bold;margin:6px 0}
+#write{display:none}
+#target{font-size:30px;text-align:center;font-weight:bold;color:#2a6fb0;margin:6px 0}
+#pad{width:100%;height:auto;background:#fff;border:3px solid #3a8fd9;border-radius:14px;display:block;-ms-touch-action:none;touch-action:none}
+#nav{margin-top:14px;text-align:center;border-top:2px solid #f0d890;padding-top:8px}
+#cheer{display:none;position:fixed;left:0;right:0;top:30%;text-align:center;font-size:56px;font-weight:bold;color:#2ea44f;z-index:100;-webkit-animation:pop .6s;animation:pop .6s;text-shadow:0 3px 0 #fff}
+@-webkit-keyframes pop{0%{-webkit-transform:scale(.2);opacity:0}70%{-webkit-transform:scale(1.2);opacity:1}100%{-webkit-transform:scale(1)}}
+@keyframes pop{0%{transform:scale(.2);opacity:0}70%{transform:scale(1.2);opacity:1}100%{transform:scale(1)}}
+#done{display:none;text-align:center;font-size:36px;padding:60px 10px}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Build the Sentence</h1>
+  <div id="count"></div>
+
+  <div id="build">
+    <div class="label">1) Put the words in order (tap or drag):</div>
+    <div id="answer"></div>
+    <div class="label">Words:</div>
+    <div id="bank"></div>
+    <div class="row">
+      <button class="btn green" id="checkBtn">Check</button>
+      <button class="btn gray" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div id="msg"></div>
+
+  <div id="write">
+    <div class="label">2) Now write the sentence with your finger:</div>
+    <div id="target"></div>
+    <canvas id="pad" width="800" height="260"></canvas>
+    <div class="row"><button class="btn red" id="clearBtn">Clear</button></div>
+  </div>
+
+  <div id="nav">
+    <button class="btn gray" id="backBtn">&#9664; Back</button>
+    <button class="btn" id="nextBtn">Next &#9654;</button>
+  </div>
+</div>
+<div id="done">&#127942;<br>Well done!<br>You finished all the questions!<br><br><button class="btn" id="againBtn">Play again</button></div>
+<div id="cheer">&#127881; Great job! &#127881;</div>
+
+<script>
+// ===== Edit your sentences here (4-5 words each) =====
+var SENTENCES = [
+  "I like red apples",
+  "The cat is sleeping",
+  "She reads a book",
+  "We play in the park",
+  "My mother cooks dinner",
+  "The sun is hot",
+  "He drinks cold water",
+  "Birds can fly high",
+  "I go to school",
+  "They are my friends",
+  "The dog runs fast",
+  "We love our teacher",
+  "My bag is blue",
+  "She has a small pencil",
+  "The boy kicks the ball"
+];
+// =====================================================
+
+var cur = 0;
+var solved = [];
+var bank = [], answer = [], words = [];
+var $ = function (id) { return document.getElementById(id); };
+
+function shuffleIdx(n, orig) {
+  var a = [], i, j, t, same, tries = 0;
+  for (i = 0; i < n; i++) a.push(i);
+  do {
+    for (i = n - 1; i > 0; i--) {
+      j = Math.floor(Math.random() * (i + 1));
+      t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    same = true;
+    for (i = 0; i < n; i++) { if (a[i] !== i) { same = false; break; } }
+    tries++;
+  } while (same && tries < 20);
+  return a;
+}
+
+function loadQuestion() {
+  var s = SENTENCES[cur];
+  words = s.split(" ");
+  $("count").innerHTML = "Question " + (cur + 1) + " / " + SENTENCES.length;
+  $("msg").innerHTML = "";
+  $("target").innerHTML = s;
+  if (solved[cur]) {
+    answer = []; bank = [];
+    for (var i = 0; i < words.length; i++) answer.push(i);
+    $("write").style.display = "block";
+    clearPad();
+  } else {
+    answer = [];
+    bank = shuffleIdx(words.length);
+    $("write").style.display = "none";
+  }
+  $("backBtn").disabled = (cur === 0);
+  $("nextBtn").innerHTML = (cur === SENTENCES.length - 1) ? "Finish &#9654;" : "Next &#9654;";
+  render();
+}
+
+function makeChip(idx, listName) {
+  var d = document.createElement("div");
+  d.className = "chip" + (solved[cur] ? " good" : "");
+  d.innerHTML = words[idx];
+  d.setAttribute("data-i", idx);
+  if (!solved[cur]) {
+    var start = function (e) { beginDrag(e, idx, listName, d); };
+    d.addEventListener("touchstart", start, false);
+    d.addEventListener("mousedown", start, false);
+  }
+  return d;
+}
+
+function render() {
+  var a = $("answer"), b = $("bank"), i;
+  a.innerHTML = ""; b.innerHTML = "";
+  for (i = 0; i < answer.length; i++) a.appendChild(makeChip(answer[i], "answer"));
+  for (i = 0; i < bank.length; i++) b.appendChild(makeChip(bank[i], "bank"));
+  $("checkBtn").disabled = solved[cur] || bank.length > 0;
+  $("resetBtn").disabled = solved[cur];
+}
+
+function removeFrom(list, idx) {
+  for (var i = 0; i < list.length; i++) { if (list[i] === idx) { list.splice(i, 1); return; } }
+}
+
+function pt(e) {
+  if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+
+function inside(el, p) {
+  var r = el.getBoundingClientRect();
+  return p.x >= r.left && p.x <= r.right && p.y >= r.top - 10 && p.y <= r.bottom + 10;
+}
+
+function beginDrag(e, idx, from, el) {
+  if (e.type === "mousedown" && e.button && e.button !== 0) return;
+  e.preventDefault();
+  var p0 = pt(e), ghost = null, moved = false;
+  var rect = el.getBoundingClientRect();
+  var offX = p0.x - rect.left, offY = p0.y - rect.top;
+
+  function move(ev) {
+    var p = pt(ev);
+    if (!moved && (Math.abs(p.x - p0.x) > 8 || Math.abs(p.y - p0.y) > 8)) {
+      moved = true;
+      ghost = el.cloneNode(true);
+      ghost.className = "chip ghost";
+      document.body.appendChild(ghost);
+      el.style.opacity = "0.3";
+    }
+    if (moved) {
+      ev.preventDefault();
+      ghost.style.left = (p.x - offX) + "px";
+      ghost.style.top = (p.y - offY) + "px";
+    }
+  }
+
+  function end(ev) {
+    document.removeEventListener("touchmove", move, false);
+    document.removeEventListener("touchend", end, false);
+    document.removeEventListener("touchcancel", end, false);
+    document.removeEventListener("mousemove", move, false);
+    document.removeEventListener("mouseup", end, false);
+    var p = pt(ev);
+    if (ghost) document.body.removeChild(ghost);
+    if (!moved) {
+      // tap: move to the other list
+      if (from === "bank") { removeFrom(bank, idx); answer.push(idx); }
+      else { removeFrom(answer, idx); bank.push(idx); }
+    } else {
+      var aEl = $("answer"), bEl = $("bank");
+      if (inside(aEl, p)) {
+        removeFrom(bank, idx); removeFrom(answer, idx);
+        var chips = aEl.children, pos = answer.length, k, r, cx;
+        // chips currently rendered include the dragged one; compute against answer list (without it)
+        var order = [];
+        for (k = 0; k < chips.length; k++) {
+          if (parseInt(chips[k].getAttribute("data-i"), 10) === idx) continue;
+          order.push(chips[k]);
+        }
+        pos = order.length;
+        for (k = 0; k < order.length; k++) {
+          r = order[k].getBoundingClientRect();
+          cx = r.left + r.width / 2;
+          if (p.y < r.top) { pos = k; break; }
+          if (p.y <= r.bottom && p.x < cx) { pos = k; break; }
+        }
+        answer.splice(pos, 0, idx);
+      } else if (inside(bEl, p)) {
+        removeFrom(bank, idx); removeFrom(answer, idx);
+        bank.push(idx);
+      }
+    }
+    $("msg").innerHTML = "";
+    render();
+  }
+
+  document.addEventListener("touchmove", move, { passive: false });
+  document.addEventListener("touchend", end, false);
+  document.addEventListener("touchcancel", end, false);
+  document.addEventListener("mousemove", move, false);
+  document.addEventListener("mouseup", end, false);
+}
+
+function check() {
+  var s = [], i;
+  for (i = 0; i < answer.length; i++) s.push(words[answer[i]]);
+  if (s.join(" ") === SENTENCES[cur]) {
+    solved[cur] = true;
+    $("msg").innerHTML = "";
+    render();
+    var c = $("cheer");
+    c.style.display = "block";
+    setTimeout(function () {
+      c.style.display = "none";
+      $("write").style.display = "block";
+      clearPad();
+    }, 1400);
+  } else {
+    $("msg").style.color = "#d33";
+    $("msg").innerHTML = "Try again \uD83D\uDE0A";
+  }
+}
+
+function resetWords() {
+  answer = []; bank = shuffleIdx(words.length);
+  $("msg").innerHTML = "";
+  render();
+}
+
+// ===== finger writing =====
+var pad = $("pad"), ctx = pad.getContext("2d"), drawing = false, lx = 0, ly = 0;
+
+function clearPad() {
+  ctx.clearRect(0, 0, pad.width, pad.height);
+  ctx.strokeStyle = "#cfe3f7"; ctx.lineWidth = 2;
+  var ys = [90, 170];
+  for (var i = 0; i < ys.length; i++) {
+    ctx.beginPath(); ctx.moveTo(10, ys[i]); ctx.lineTo(pad.width - 10, ys[i]); ctx.stroke();
+  }
+  ctx.strokeStyle = "#222"; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
+}
+
+function padPos(e) {
+  var p = pt(e), r = pad.getBoundingClientRect();
+  return { x: (p.x - r.left) * (pad.width / r.width), y: (p.y - r.top) * (pad.height / r.height) };
+}
+
+function dStart(e) {
+  e.preventDefault(); drawing = true;
+  var p = padPos(e); lx = p.x; ly = p.y;
+  ctx.beginPath(); ctx.arc(lx, ly, 3, 0, 6.3); ctx.fillStyle = "#222"; ctx.fill();
+}
+function dMove(e) {
+  if (!drawing) return;
+  e.preventDefault();
+  var p = padPos(e);
+  ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(p.x, p.y); ctx.stroke();
+  lx = p.x; ly = p.y;
+}
+function dEnd() { drawing = false; }
+
+pad.addEventListener("touchstart", dStart, false);
+pad.addEventListener("touchmove", dMove, false);
+pad.addEventListener("touchend", dEnd, false);
+pad.addEventListener("mousedown", dStart, false);
+pad.addEventListener("mousemove", dMove, false);
+document.addEventListener("mouseup", dEnd, false);
+
+// ===== navigation =====
+$("checkBtn").onclick = check;
+$("resetBtn").onclick = resetWords;
+$("clearBtn").onclick = clearPad;
+$("backBtn").onclick = function () { if (cur > 0) { cur--; loadQuestion(); } };
+$("nextBtn").onclick = function () {
+  if (cur < SENTENCES.length - 1) { cur++; loadQuestion(); }
+  else { $("app").style.display = "none"; $("done").style.display = "block"; }
+};
+$("againBtn").onclick = function () {
+  solved = []; cur = 0;
+  $("done").style.display = "none"; $("app").style.display = "block";
+  loadQuestion();
+};
+
+loadQuestion();
+</script>
+</body>
+</html>
